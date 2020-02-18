@@ -1,0 +1,233 @@
+---
+title: "Customer Churn Problem"
+output: html_document
+---
+
+## Problem Background
+Customer churn is a problem that all companies need to monitor, especially those that depend on subscription-based revenue streams. Customer churn refers to the situation when a customer ends their relationship with a company, and it’s a costly problem. Customers are the fuel that powers a business. Loss of customers impacts sales. Further, it’s much more difficult and costly to gain new customers than it is to retain existing customers. As a result, organizations need to focus on reducing customer churn.
+
+ The dataset used for this Keras tutorial is IBM Watson Telco Dataset. According to IBM, the business challenge is:
+
+ "A telecommunications company [Telco] is concerned about the number of           customers leaving their landline business for cable competitors. They           need to understand who is leaving. Imagine that you’re an analyst at            this company and you have to find out who is leaving and why."
+
+
+We are going to use Keras library to to develop a sophisticated and highly accurate deep learning model in R. We walk you through the preprocessing steps, investing time into how to format the data for Keras.
+
+Finally we show you how to get black box (NN) insighrts using the recently developed lime package.
+```{r}
+
+```
+
+```{r}
+# Load libraries
+
+# install.packages("devtools")
+#devtools::install_github("mdancho84/tidyquant")
+
+library(keras) #modeling NN
+library(tidyverse) #for data manipulation
+library(rsample) #for sampling 
+library(recipes) #for eficient preprocessing
+library(yardstick) #Tidy methods for measuring model performance
+library(corrr) #for Correlation Analysis
+library(readr)
+
+# Install Keras if you have not installed before
+#install_keras()
+```
+
+## Read Data
+The dataset includes information about:
+
+- Customers who left within the last month: The column is called Churn
+- Services that each customer has signed up for: phone, multiple lines, internet, online security, online backup, device protection, tech support, and streaming TV and movies
+- Customer account information: how long they’ve been a customer, contract, payment method, paperless billing, monthly charges, and total charges
+- Demographic info about customers: gender, age range, and if they have partners and dependents
+```{r}
+#setwd("YOUR HOME DIRECTORY PATH")
+churn_data_raw <- read_csv("Telco-Customer-Churn.csv")
+head(churn_data_raw)
+```
+
+## Prune and clean dataset
+```{r}
+churn_data_tbl <- churn_data_raw %>%
+  select(-customerID) %>% # remove the customerID 
+  drop_na() %>%  # Drop rows that have NA(Not Available) Values
+  select(Churn, everything())
+
+head(churn_data_tbl) #dsiplay 6 first rows of the dataset.
+```
+
+## Split data
+Split test/training sets using the rsample package
+```{r}
+set.seed(1000) #for reproducibility
+train_test_split <- initial_split(churn_data_tbl, prop = 0.8)
+train_tbl <- training(train_test_split)
+test_tbl  <- testing(train_test_split)
+cat("Dimensions of the training set is: ", dim(train_tbl), "\n")
+cat("Dimensions of the test set is: ", dim(test_tbl), "\n")
+```
+
+
+## Preprocess/Normalize the Data using the friendly "recipe"
+1. we discretize the variable *tenure* into 6 categories
+2. create the log transformation of *TotalCharges*
+3. encode the categorical data into dummy variables
+4. to mean-center the data
+5. scale the data
+6. prepare the recipe, i.e., estimate the required parameters from a training set that can later be applied to other data sets
+```{r}
+# Create recipe
+rec_obj <- recipe(Churn ~ ., data = train_tbl) %>%
+  step_discretize(tenure, options = list(cuts = 6)) %>%
+  step_log(TotalCharges) %>%
+  step_dummy(all_nominal(), -all_outcomes()) %>%
+  step_center(all_predictors(), -all_outcomes()) %>%
+  step_scale(all_predictors(), -all_outcomes()) %>%
+  prep(data = train_tbl)
+
+# Print the recipe object
+rec_obj
+```
+We can apply the “recipe” to any data set with the bake() function, and it processes the data following our recipe steps above. We apply to our training and testing data to convert from raw data to a machine learning dataset.
+
+And finaly, we need to store the actual (truth) values as y_train_vec and y_test_vec, which are needed for training and testing our NN.
+```{r}
+# Creating the X and Y sets
+x_train_tbl <- bake(rec_obj, new_data = train_tbl) %>% select(-Churn)
+x_test_tbl  <- bake(rec_obj, new_data = test_tbl) %>% select(-Churn)
+glimpse(x_train_tbl)
+y_train_vec <- ifelse(pull(train_tbl, Churn) == "Yes", 1, 0)
+y_test_vec  <- ifelse(pull(test_tbl, Churn) == "Yes", 1, 0)
+```
+
+
+## Build the NN model
+
+Finally, Deep Learning with Keras in R! 
+
+The first step is to initialize a sequential model with keras_model_sequential(), which is the beginning of our Keras model. The sequential model is composed of a linear stack (sequence) of layers.
+
+*note*: The first layer needs to have the input_shape, that is the numeber of geatures that is getting fed by. In this case it is the number of columns in the x_train_tbl.
+```{r}
+# Building our Artificial Neural Network
+model_keras <- keras_model_sequential()
+
+model_keras %>% 
+  
+  # First hidden layer
+  layer_dense(
+    units              = 16, 
+    kernel_initializer = "uniform", 
+    activation         = "relu", 
+    input_shape        = ncol(x_train_tbl)) %>% 
+  
+  # Dropout to prevent overfitting
+  layer_dropout(rate = 0.1) %>%
+  
+  # Second hidden layer
+  layer_dense(
+    units              = 16, 
+    kernel_initializer = "uniform", 
+    activation         = "relu") %>% 
+  
+  # Dropout to prevent overfitting
+  layer_dropout(rate = 0.1) %>%
+  
+  # Output layer
+  layer_dense(
+    units              = 1, #For multi-classification, the units should correspond to the number of classes
+    kernel_initializer = "uniform", 
+    activation         = "sigmoid") %>% 
+  
+  # Compile NN
+  compile(
+    optimizer = 'adam',
+    loss      = 'binary_crossentropy',
+    metrics   = c('accuracy')
+  )
+
+#display model architecture
+model_keras
+```
+```{r}
+# Train model
+history <- fit(
+  object           = model_keras, 
+  x                = as.matrix(x_train_tbl), 
+  y                = y_train_vec,
+  batch_size       = 50, 
+  epochs           = 35,
+  validation_split = 0.30 #to include 30% of the data for model validation, which prevents overfitting.
+)
+```
+
+```{r}
+# Print a summary of the training history
+print(history)
+```
+
+```{r}
+# Plot the training/validation history of our Keras model
+plot(history)
+```
+*Tip* Only use enough epochs to get a high validation accuracy. Once validation accuracy curve begins to flatten or decrease, it’s time to stop training.
+
+
+let’s make some predictions from our keras model on the test data set, which was unseen during modeling. You can prdict *class* or *probability*
+```{r}
+# Predicted Class
+yhat_keras_class_vec <- predict_classes(object = model_keras, x = as.matrix(x_test_tbl)) %>%
+    as.vector()
+
+# Predicted Class Probability
+yhat_keras_prob_vec  <- predict_proba(object = model_keras, x = as.matrix(x_test_tbl)) %>%
+    as.vector()
+```
+
+## Inspect Performance With Yardstick
+```{r}
+# Format test data and predictions for yardstick metrics
+estimates_keras_tbl <- tibble(
+  truth      = as.factor(y_test_vec) %>% fct_recode(yes = "1", no = "0"),
+  estimate   = as.factor(yhat_keras_class_vec) %>% fct_recode(yes = "1", no = "0"),
+  class_prob = yhat_keras_prob_vec
+)
+options(yardstick.event_first = FALSE) # the default is to classify 0 as the positive class instead of 1
+estimates_keras_tbl
+```
+
+### Confusion Table
+```{r}
+estimates_keras_tbl %>% conf_mat(truth, estimate)
+```
+
+### Accuracy
+```{r}
+estimates_keras_tbl %>% accuracy(truth, estimate)
+```
+
+### AUC
+ROC Area Under the Curve (AUC) measurement
+```{r}
+estimates_keras_tbl %>% roc_auc(truth, class_prob)
+```
+
+
+### Precision and Recall
+Precision is when the model predicts “yes”, how often is it actually “yes”.
+Recall (also true positive rate) is when the actual value is “yes” how often is the model correct
+```{r}
+estimates_keras_tbl %>% precision(truth, estimate)
+estimates_keras_tbl %>% recall(truth, estimate)
+```
+
+### F1 Score
+weighted average between the precision and recal
+```{r}
+estimates_keras_tbl %>% f_meas(truth, estimate)
+```
+
+

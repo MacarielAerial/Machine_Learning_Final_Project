@@ -1,0 +1,204 @@
+---
+title: "Demo Deep Learning"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+---
+
+## Libraries
+```{r}
+# Core Tidyverse
+library(ggplot2)
+#library(glue)
+#library(forcats)
+
+# Time Series
+#library(timetk)
+#library(tidyquant)
+#library(tibbletime)
+
+# Visualization
+#library(cowplot)
+
+# Preprocessing
+library(recipes)
+
+# Sampling / Accuracy
+#library(rsample)
+#library(yardstick) 
+
+# Modeling
+library(keras)
+library(tensorflow)
+library(tfruns)
+```
+
+
+## Data
+```{r}
+#setwd("YOUR DIRECTORY")
+ge_data <- read.delim("ge.us.txt", header = TRUE, sep = ",")
+```
+
+Prune the data. For simplicity, we are using only the "Close" feature
+```{r}
+ge <- ge_data %>% 
+    select(Day, Close)
+dim(ge)
+head(ge, 10)
+```
+## Plot 
+```{r}
+ggplot(ge, aes(Day, Close, group = 1)) +
+  geom_line(color = "black", alpha = 0.8) +
+  scale_x_discrete(breaks = levels(ge$Day)[floor(seq(1, nlevels(ge$Day),length.out = 5))]) +
+  labs(x = "Day", y = "Close Value", title = "GE Stock")
+```
+
+## Normalize the Data 
+Better performance for LSTM 
+```{r}
+rec_obj <- recipe(Close ~ ., ge) %>%
+    step_sqrt(Close) %>%
+    step_center(Close) %>%
+    step_scale(Close) %>%
+    prep()
+
+ge_normalized <- bake(rec_obj, ge)
+
+#keep centers for denormalization later
+center_history <- rec_obj$steps[[2]]$means["Close"]
+scale_history  <- rec_obj$steps[[3]]$sds["Close"]
+
+c("center" = center_history, "scale" = scale_history)
+```
+
+```{r}
+ge_trn <- ge_normalized[1:12000,] #training
+ge_val <- ge_normalized[12001:13000,] #validation
+ge_test <- ge_normalized[13001:14053 ,] #test for deletion
+```
+
+
+## Reshaping the Data
+```{r}
+n_inputs <- 4 #number of inputs in the RNN e.g. 1st it. use first 10 days to predict the 11th
+n_predictions <- 1
+batch_size <- 10 #number of batches that you give. large the model is faster -- parmeter
+```
+
+#### Functions
+```{r}
+build_windowed_matrix <- function(data, timesteps) { #tranforms data into the  windows of 4+1) if you have 14K rows this produce a matric of 14K x 5
+  t(sapply(1:(length(data) - timesteps + 1), function(x) 
+    data[x:(x + timesteps - 1)]))
+}
+
+reshape_3D <- function(df){ #to do it 14kx5x1 since this is required by keras. If it was multivariate (n) it should be  14kx5xn!!!
+  dim(df) <- c(dim(df)[1], dim(df)[2], 1)
+  df
+}
+
+get_x <- function(mtx, n_inputs, batch_size){#for each row gets the the x's (4 in number) 
+  mtx <- mtx[, 1:n_inputs]
+  mtx <- mtx[1:(nrow(mtx) %/% batch_size * batch_size), ]
+  reshape_3D(mtx)
+}
+
+get_y <- function(mtx, n_inputs, n_predictions, batch_size) {#for each row gets the the y (5th element) + put them in 3D
+  mtx <- mtx[, (n_inputs+1):(n_inputs+n_predictions), drop=FALSE]
+  mtx <- mtx[1:(nrow(mtx) %/% batch_size * batch_size), drop=FALSE]
+  if(n_predictions==1){
+    dim(mtx) <- c(length(mtx)[1], 1)
+  }
+  reshape_3D(mtx)
+}
+```
+
+#### Extract 'Close' Values 
+Extraxt close values and disregard dates
+```{r}
+trn <- ge_trn %>% select(Close) %>% pull() #into  vector
+val <- ge_val %>% select(Close) %>% pull()
+test <- ge_test %>% select(Close) %>% pull()
+```
+
+#### Build matrices
+actually using the functions that I defined aboved
+```{r}
+trn_mtx <- build_windowed_matrix(trn, n_inputs+n_predictions)
+val_mtx <- build_windowed_matrix(val, n_inputs+n_predictions)
+test_mtx <- build_windowed_matrix(test, n_inputs+n_predictions)
+
+X_train <- get_x(trn_mtx, n_inputs, batch_size)
+Y_train <- get_y(trn_mtx, n_inputs, n_predictions, batch_size)
+X_val <- get_x(val_mtx, n_inputs, batch_size)
+Y_val <- get_y(val_mtx, n_inputs, n_predictions, batch_size)
+X_test <- get_x(test_mtx, n_inputs, batch_size)
+Y_test <- get_y(test_mtx, n_inputs, n_predictions, batch_size)
+```
+
+```{r}
+
+```
+
+## Build model
+```{r}
+model <- keras_model_sequential()
+
+model %>%
+  layer_lstm(  #lstm with 32 units in each cell
+    units = 32,
+    batch_input_shape = c(batch_size, n_inputs, n_predictions)
+  )
+
+model %>% 
+  layer_dense(units = 1)
+
+model %>%
+  compile(
+    loss = 'mean_squared_error',
+    optimizer = 'sgd',
+    metrics = list("mean_squared_error")
+  )
+```
+
+```{r}
+callbacks <- list(#stop criterion depends on if the network is not learning any more...stop the model from training after 5 epochs if there is no learning
+  callback_early_stopping(patience = 5)
+)
+```
+
+
+```{r}
+history <- model %>% fit(
+  x = X_train,
+  y = Y_train,
+  validation_data = list(X_val, Y_val),
+  batch_size = batch_size,
+  epochs = 100,
+  callbacks = callbacks
+)
+```
+
+### Predictions
+
+```{r}
+pred_test <- model %>%
+  predict(X_test, batch_size = batch_size) 
+# de-normalize to original scale
+pred_test <- (pred_test * scale_history + center_history) ^2 #denormalization
+```
+
+### Plot predictions vs actual
+```{r}
+
+```
+
+```{r}
+ggplot(ge[(13001+n_inputs):(13000+n_inputs+dim(pred_test)[1]),], aes(x = Day, y = Close, group = 1)) + geom_line() +
+  scale_x_discrete(breaks = levels(ge$Day)[floor(seq(1, nlevels(ge$Day),length.out = 5))]) +
+  geom_line(aes(y = pred_test), color = "red") +
+  labs(x = "Days", y = "Close Value", title = "GE Stock")
+```

@@ -1,0 +1,5 @@
+Keras Installation Instructions:
+
+https://www.datacamp.com/community/tutorials/keras-r-deep-learning
+
+And go to --> Installing The keras Package.
