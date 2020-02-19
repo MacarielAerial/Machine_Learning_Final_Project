@@ -243,38 +243,26 @@ Logit.logit(solver_object.X_train, solver_object.y_train, solver_object.X_test, 
 
 # GE Stock Price Prediction Case
 
-## Use any combination (at least three) of features to predict closing value of the upcoming day
-The performance did improve after adding more features as demonstrated in the code. The test loss went down after adding more features.
-
-## Use RNN with one or any combinations of features to predict the closing value of one upcoming day. Did the performance increase after adding more features?
-The performance also improved after adding more features.
-
-## Perform hyperparameter tuning to improve the performance of your LSTM model
-I increased the number of timesteps (previous days) and added another LSTM layer with 32 units before the linear Dense layer in the end.
-
-## Perform hyperparameter tuning to improve the performance of your RNN model
-
-## Predict the closing values for 2 upcoming days using feature values from 8 previous days
-
-## Discuss in half A4 page the limitations of deep learning on predicting stock market
-Although neural network is powerful at approximating the statistical relationshiop between historical financial data and future financial data, usually future stock prices are correlated with non-financial factors that are not included in the dataset.
-Another issue is the availibility of data. Predicting daily stock prices is much easier than predicting monthly or annual stock prices because there is much less monthly and yearly financial data.
-
 ```{python}
 from __future__ import absolute_import, division, print_function
 
 # Import libraries
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, BatchNormalization
+from tensorflow.keras.layers import LSTM, Dense, BatchNormalization, SimpleRNN, Dropout
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import os
+
+# Configure the programme
+plt.style.use('seaborn-darkgrid')
 
 # Specify global parameters
 input_path = 'GE Stock Price with LSTM/'
@@ -284,13 +272,16 @@ output_file = 'output.csv'
 features = ['open', 'volume', 'close']
 time_col_name = 'day'
 n_steps = 4
+n_steps_out = 2
 batch_size = 10
+rnn_unit = False
+more_layer = True
 ```
 
 ```{python}
 class Solver:
 	'''Executes sub-modules through this class object'''	
-	def __init__(self, input_path, input_file, output_path, output_file, features, time_col_name, n_steps, batch_size, train_test_split = 0.85):
+	def __init__(self, input_path, input_file, output_path, output_file, features, time_col_name, n_steps, batch_size, rnn_unit, more_layer, train_test_split = 0.85, n_steps_out = 0):
 		'''Loads global variables into the object'''
 		Aux.directory_create(input_path + output_path[1:-1])
 		self.input_path = input_path
@@ -299,9 +290,12 @@ class Solver:
 		self.output_file = output_file
 		self.features = features
 		self.time_col_name = time_col_name
-		self.train_test_split = train_test_split
 		self.n_steps = n_steps
 		self.batch_size = batch_size
+		self.rnn_unit = rnn_unit
+		self.more_layer = more_layer
+		self.train_test_split = train_test_split
+		self.n_steps_out = n_steps_out
 		self.n_features = len(self.features)
 		self.df = Aux.data_import(self.input_path + self.input_file)
 		self.train = pd.DataFrame()
@@ -316,7 +310,9 @@ class Solver:
 		self.model1 = None
 		self.model2 = None
 		self.model3 = None
-		self.scaler = None
+		self.scaler_train = StandardScaler()
+		self.scaler_val = StandardScaler()
+		self.scaler_test = StandardScaler()
 		self.predictions = None
 		self.test_scroes = None
 
@@ -344,18 +340,34 @@ class Solver:
 		'''Splits data into train and test sets without shuffling'''
 		self.train, self.test = np.split(self.df, [int(self.train_test_split * len(self.df))])
 		self.train, self.val = np.split(self.train, [int(self.train_test_split * len(self.train))])
-		self.scaler = StandardScaler()
-		self.train, self.val, self.test = self.scaler.fit_transform(self.train), self.scaler.fit_transform(self.val), self.scaler.fit_transform(self.test)
-		self.X_train, self.y_train = Aux.data_reshape(self.train, self.n_steps)
-		self.X_val, self.y_val = Aux.data_reshape(self.val, self.n_steps)
-		self.X_test, self.y_test = Aux.data_reshape(self.test, self.n_steps)
+		self.train, self.val, self.test = self.scaler_train.fit_transform(self.train), self.scaler_val.fit_transform(self.val), self.scaler_test.fit_transform(self.test)
+		self.X_train, self.y_train = Aux.data_reshape(self.train, self.n_steps, self.n_steps_out)
+		self.X_val, self.y_val = Aux.data_reshape(self.val, self.n_steps, self.n_steps_out)
+		self.X_test, self.y_test = Aux.data_reshape(self.test, self.n_steps, self.n_steps_out)
 
 	def model_define(self):
 		'''Defines the model architecture'''
 		self.model1 = Sequential()
 		self.model1.add(BatchNormalization(input_shape = (self.n_steps, self.n_features)))
-		self.model1.add(LSTM(64, activation = 'relu'))
-		self.model1.add(Dense(1))
+		self.model1.add(Dropout(0.2))
+		if self.rnn_unit:
+			if self.more_layer:
+				self.model1.add(SimpleRNN(64, activation = 'relu', return_sequences = True))
+				self.model1.add(BatchNormalization())
+				self.model1.add(SimpleRNN(16, activation = 'relu'))
+			else:
+				self.model1.add(SimpleRNN(64, activation = 'relu'))
+		else:
+			if self.more_layer:
+				self.model1.add(LSTM(64, activation = 'relu', return_sequences = True))
+				self.model1.add(BatchNormalization())
+				self.model1.add(LSTM(16, activation = 'relu'))
+			else:
+				self.model1.add(LSTM(64, activation = 'relu'))
+		if self.n_steps_out > 0:
+			self.model1.add(Dense(self.n_steps_out))
+		else:
+			self.model1.add(Dense(1))
 		self.model1.summary()
 		plot_model(self.model1, self.input_path + self.output_path + 'model.png', show_shapes = True)
 		self.model1.save(self.input_path + self.output_path + 'model')
@@ -374,9 +386,20 @@ class Solver:
 	
 	def model_eval(self):
 		'''Evaluates model performance on test data'''
+		# Predicts test data with trained model
 		self.predictions = self.model1.predict(self.X_test)
+		# Only take the first timestep prediction/actual if multistep forecast is used
+		if self.n_steps_out > 0:
+			self.predictions = np.array([i[0] for i in self.predictions])
+			self.y_test = np.array([i[0] for i in self.y_test])
+		# Evaluates model performance with Tensorflow's built in function
 		self.test_scores = self.model1.evaluate(self.X_test, self.y_test, verbose = 2)
 		print('Test loss:', self.test_scores[0])
+		print(self.predictions)
+		# De-normalises data for plotting
+		self.predictions, self.y_test = Aux.denormalisation(self.predictions, self.y_test, self.scaler_test)
+		# Visualises de-normalised actual vs. predicted data
+		Aux.actual_vs_prediction_vis(self.predictions, self.y_test, self.input_path + self.output_path)
 
 	def exec(self):
 		self.diagnostics()
@@ -387,9 +410,9 @@ class Solver:
 		self.model_train()
 		self.model_eval()
 		print('Training Data:')
-		print(self.scaler.inverse_transform(self.train))
+		print(self.scaler_train.inverse_transform(self.train))
 		print('Testing Data:')
-		print(self.scaler.inverse_transform(self.test))
+		print(self.scaler_test.inverse_transform(self.test))
 ```
 
 ```{python}
@@ -425,17 +448,39 @@ class Aux:
 		column_labels.append(target_label)
 		return df[column_labels]
 
-	def data_reshape(df, n_steps):
+	def denormalisation(predictions, y_test, scaler_test):
+		'''De-normalises data that was centred and scaled for training purpose'''
+		# Zero padding for de-normalisation
+		predictions = np.c_[np.zeros((len(predictions), 2)), predictions]
+		# De-normalisation
+		predictions = scaler_test.inverse_transform(predictions)[:, -1]
+		# Reverses square root transformation
+		predictions = np.square(predictions)
+		# Zero padding for de-normalisation
+		y_test = np.c_[np.zeros((len(y_test), 2)), y_test]
+		# De-normalisation
+		y_test = scaler_test.inverse_transform(y_test)[:, -1]
+		# Reverse square root transformation
+		y_test = np.square(y_test)
+		return predictions, y_test
+
+	def data_reshape(df, n_steps, n_steps_out):
 		'''Splits multiple parallel time-series into three-dimensional samples for LSTM'''
 		X, y = list(), list()
 		for i in range(len(df)):
-			# Find the end of this sample
+			# Find the end of this sample as well as the end of forecast period if required
 			end_ix = i + n_steps
+			out_end_ix = end_ix + n_steps_out
 			# Check if we have gone beyond the data
 			if end_ix >= len(df):
 				break
+			elif out_end_ix > len(df):
+				break
 			# Gather input and output parts of the sample
-			seg_x, seg_y = df[i:end_ix, :], df[end_ix, -2]
+			if n_steps_out > 0:
+				seg_x, seg_y = df[i:end_ix, :], df[end_ix:out_end_ix, -1]
+			else:
+				seg_x, seg_y = df[i:end_ix, :], df[end_ix, -1]
 			X.append(seg_x)
 			y.append(seg_y)
 		return np.array(X), np.array(y)
@@ -449,12 +494,158 @@ class Aux:
 		plt.title('Model Loss')
 		plt.ylabel('Loss')
 		plt.xlabel('Epoch')
-		plt.legend(['Test', 'Train'], loc = 'upper left')
+		plt.legend(['Train', 'Test'], loc = 'upper left')
 		plt.savefig(path + 'Loss_History.png', dpi = 300)
+		plt.close()
+
+	def actual_vs_prediction_vis(predictions, y_test, path):
+		'''Visualises the actual test data against the model's predictions'''
+		plt.figure(figsize = (16,9))
+		plt.plot(y_test, color = 'blue')
+		plt.plot(predictions, color = 'red')
+		plt.title('Test Actuals vs. Predictions')
+		plt.xlabel('Date')
+		plt.ylabel('GE Stock Price')
+		plt.legend(['Actuals', 'Predictions'], loc = 'upper left')
+		plt.savefig(path + 'Actuals_Predictions.png', dpi = 300)
 		plt.close()
 ```
 
+## Use any combination (at least three) of features to predict closing value of the upcoming day
+The performance did improve after adding more features as demonstrated in the code. The test loss with three features is 0.2485. The test loss is lower after adding more features.
+
+### One feature scenario
 ```{python}
-solver_object = Solver(input_path, input_file, output_path, output_file, features, time_col_name, n_steps, batch_size)
+# Specify one feature
+features = ['close']
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+### Three features scenario
+```{python}
+# Specify the combination of features
+features = ['open', 'volume', 'close']
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+## Use RNN with one or any combinations of features to predict the closing value of one upcoming day. Did the performance increase after adding more features?
+The performance also improved after adding more features.
+
+### One feature with RNN scenario
+```{python}
+# Specify one feature
+features = ['close']
+# Specify RNN instead of LSTM as hidden layer computational unit
+rnn_unit = True
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+### Three features with RNN scenario
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify RNN instead of LSTM as hidden layer computational unit
+rnn_unit = True
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+## Perform hyperparameter tuning to improve the performance of your LSTM model
+I increased the number of timesteps (previous days) and added another LSTM layer with 16 units before the linear Dense layer in the end. The model performance increased as a result.
+I increased the number of timesteps from 4 to 10. The model performance also increased as a result.
+
+### Three features with one more LSTM layer scenario
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify LSTM instead of RNN as hidden layer computational unit
+rnn_unit = False
+# Add an additional layer of 16 LSTM unis to the model
+more_layer = True
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+### Three features with 10 timesteps scenario
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify LSTM instead of RNN as hidden layer computational unit
+rnn_unit = False
+# Add no additional layer of 16 LSTM unis to the model
+more_layer = False
+# Stretch the input timestep window from the default to 10
+n_steps = 10
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+## Perform hyperparameter tuning to improve the performance of your RNN model
+
+### Three features with one more RNN layer scenario
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify RNN instead of LSTM as hidden layer computational unit
+rnn_unit = True
+# Add no additional layer of 16 LSTM unis to the model
+more_layer = False
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+### Three features with 10 timesteps scenario
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify RNN instead of LSTM as hidden layer computational unit
+rnn_unit = True
+# Add no additional layer of 16 LSTM unis to the model
+more_layer = False
+# Stretch the input timestep window from the default to 10
+n_steps = 10
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+## Predict the closing values for 2 upcoming days using feature values from 8 previous days
+
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify LSTM instead of RNN as hidden layer computational unit
+rnn_unit = False
+# Add an additional layer of 16 LSTM unis to the model
+more_layer = True
+# Stretch the input timestep window from the default to 8
+n_steps = 8
+# Define the number of upcoming closing value prediction as 2
+n_steps_out = 2
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
+
+## Discuss in half A4 page the limitations of deep learning on predicting stock market
+Although neural network is powerful at approximating the statistical relationshiop between historical financial data and future financial data, usually future stock prices are correlated with non-financial factors that are not included in the dataset.
+Another issue is the availibility of data. Predicting daily stock prices is much easier than predicting monthly or annual stock prices because there is much less monthly and yearly financial data.
