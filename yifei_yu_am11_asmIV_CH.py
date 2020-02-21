@@ -27,15 +27,15 @@ class Solver:
 	'''Executes sub-modules through this class object'''	
 	def __init__(self, input_path, input_file, output_path, output_file, impute_nan = False, test_size = 0.2, dropout_rate = 0.2):
 		'''Loads global variables into the object'''
-		Aux.directory_create(input_path + output_path[1:-1])
+		Aux.directory_create(input_path + output_path[1:-1]) # Create a directory for output files if not exist
 		self.input_path = input_path
 		self.input_file = input_file
 		self.output_path = output_path
 		self.output_file = output_file
-		self.impute_nan = impute_nan
+		self.impute_nan = impute_nan # Control methods to handle missing values
 		self.test_size = test_size
 		self.dropout_rate = dropout_rate
-		self.df = pd.read_csv(self.input_path + self.input_file)
+		self.df = pd.read_csv(self.input_path + self.input_file) # Import data
 		self.X_train = pd.DataFrame()
 		self.X_test = pd.DataFrame()
 		self.y_train = pd.DataFrame()
@@ -45,22 +45,22 @@ class Solver:
 
 	def data_clean(self):
 		'''Cleans the data'''
-		self.df = Aux.column_names_clean(self.df)
-		self.df.drop(['customerid'], axis = 1, inplace = True)
-		self.df['totalcharges'].replace(' ', np.nan, inplace = True)
-		self.df['totalcharges'] = self.df['totalcharges'].astype(float)
+		self.df = Aux.column_names_clean(self.df) # Eliminate space and upper case characters in column names
+		self.df.drop(['customerid'], axis = 1, inplace = True) # Drop uniquely identifiable column
+		self.df['totalcharges'].replace(' ', np.nan, inplace = True) # Standardise missing value representations
+		self.df['totalcharges'] = self.df['totalcharges'].astype(float) # Specify continuous column
 		if self.impute_nan:
-			self.df['totalcharges'].fillna(self.df['totalcharges'].mean(), inplace = True)
+			self.df['totalcharges'].fillna(self.df['totalcharges'].mean(), inplace = True) # Impute missing data by replacing them with column means
 		else:
 			self.df.dropna(subset = ['totalcharges'], inplace = True)
-		self.df[categorical_columns] = self.df[categorical_columns].astype('category')
+		self.df[categorical_columns] = self.df[categorical_columns].astype('category') # Specify discrete columns
 		self.df['totalcharges'] = self.df['totalcharges'].astype(float)
-		self.df['totalcharges'] = np.log(self.df['totalcharges'])
-		self.df = pd.concat([pd.get_dummies(self.df.drop('churn', axis = 1)), self.df['churn']], axis = 1)
-		self.df['churn'].replace({'Yes': 1, 'No': 0}, inplace = True)
-		self.df = Aux.column_names_clean(self.df)
-		self.X_train, self.X_test, self.y_train, self.y_test = Aux.data_partition(self.df.drop('churn', axis = 1), self.df['churn'], test_size = self.test_size)
-		self.X_train, self.X_test = pd.DataFrame(scale(self.X_train), columns = self.df.columns[:-1]), pd.DataFrame(scale(self.X_test), columns = self.df.columns[:-1])
+		self.df['totalcharges'] = np.log(self.df['totalcharges']) # Log transform target feature
+		self.df = pd.concat([pd.get_dummies(self.df.drop('churn', axis = 1)), self.df['churn']], axis = 1) # Enable one-hot enconding
+		self.df['churn'].replace({'Yes': 1, 'No': 0}, inplace = True) # Standardise binary variable representation
+		self.df = Aux.column_names_clean(self.df) # Eliminate space and upper case characters in column names
+		self.X_train, self.X_test, self.y_train, self.y_test = Aux.data_partition(self.df.drop('churn', axis = 1), self.df['churn'], test_size = self.test_size) # Split data into different sets
+		self.X_train, self.X_test = pd.DataFrame(scale(self.X_train), columns = self.df.columns[:-1]), pd.DataFrame(scale(self.X_test), columns = self.df.columns[:-1]) # Normalise data
 
 	def model_define(self):
 		'''Defines the architecture for churn rate prediction with a neural network model'''
@@ -85,27 +85,27 @@ class Solver:
 				    batch_size = 64,
 				    epochs = 10,
 				    validation_split = 0.2)
-		Aux.train_history_vis(history.history, path = self.input_path + self.output_path)
+		Aux.train_history_vis(history.history, path = self.input_path + self.output_path) # Visualises training history
 
 	def model_predict(self):
 		'''Predicts values with new data given a previously trained model'''
-		self.predicted = self.model.predict(self.X_test)
+		self.predicted = self.model.predict(self.X_test) # Predict target feature for test data
 	
 	def model_evaluate(self):
 		'''Evaluates model based on test data'''
 		# Accuracy measure
-		test_scores = self.model.evaluate(self.X_test, self.y_test, verbose = 2)
+		test_scores = self.model.evaluate(self.X_test, self.y_test, verbose = 2) # Evaluate performance based on cross-entropy and classification accuracy
 		self.model.save(self.input_path + self.output_path + 'model')
 		print('Test loss:', test_scores[0])
-		print('Test accuracy:', test_scores[1])		
+		print('Test accuracy:', test_scores[1])
 
 		# AUC measure
-		roc_auc = roc_auc_score(self.y_test, self.predicted)
+		roc_auc = roc_auc_score(self.y_test, self.predicted) # Evaluate performance based on AUC
 		print('AUC score:', roc_auc)
 
 		# Precision, recall and F1 measures
 		predicted_class = np.where(self.predicted <= 0.5, 0, 1)
-		p_r_f1 = precision_recall_fscore_support(self.y_test, predicted_class)
+		p_r_f1 = precision_recall_fscore_support(self.y_test, predicted_class) # Evalute performance based on F1 measures
 		print(p_r_f1)
 
 	def exec(self):
@@ -161,14 +161,11 @@ class Aux:
 		plt.ylabel('Loss')
 		plt.xlabel('Epoch')
 		plt.legend(['Test', 'Train'], loc = 'upper left')
-		plt.savefig(path + 'Loss_History.png', dpi = 300)
+		plt.savefig(path + 'Loss History.png', dpi = 300)
 		plt.close()
 
 def main():
-	#solver_object = Solver(input_path, input_file, output_path, output_file, impute_nan = True)
-	#solver_object.exec()
-
-	solver_object = Solver(input_path, input_file, output_path, output_file)
+	solver_object = Solver(input_path, input_file, output_path, output_file, impute_nan = True)
 	solver_object.exec()
 
 	Logit.logit(solver_object.X_train, solver_object.y_train, solver_object.X_test, solver_object.y_test)

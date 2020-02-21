@@ -2,7 +2,12 @@
 title: "Machine_Learning_Assignment_4"
 author: "Yifei Yu"
 date: "12/02/2020"
-output: html_document
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -40,11 +45,11 @@ For problems where the label has multiple levels, we should use categorical cros
 
 ## Perform hyperparameter tuning to better understand the performance of your model
 *Present the architecture and parameters of your best possible model*  
-![computational graph](Customer Churn with ANN/output/computational_graph.png)
+![computational graph](Customer Churn with ANN/output/computational graph.png)
 The overall architecture consists of three dense layers and three dropout layers as well as one final dense layer with one sigmoid computational unit to estimate probability.  
 The hyperparameters are 20% dropout rate, 64 batch size and 10 epochs.  
 *Does your model suffer from underfitting or overfitting? Discuss using plots.*  
-![Loss History Graph](Customer Churn with ANN/output/Loss_History.png)
+![Loss History Graph](Customer Churn with ANN/output/Loss History.png)
 Neither. Both training loss and testing loss dropped to a low level. The complexity and the regularisation effort paid off.  
 *Inspect the performance with all the metrics used in class.*  
 Accuracy on test data is around 78% as calculated by the code below.  
@@ -259,10 +264,12 @@ from tensorflow.keras.utils import plot_model
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
+import random
 import os
 
 # Configure the programme
 plt.style.use('seaborn-darkgrid')
+random.seed(11)
 
 # Specify global parameters
 input_path = 'GE Stock Price with LSTM/'
@@ -381,7 +388,8 @@ class Solver:
 					 batch_size = self.batch_size,
 					 epochs = 100,
 					 validation_data = (self.X_val, self.y_val),
-					 callbacks = Aux.earlystopping())
+					 callbacks = Aux.earlystopping(),
+					 verbose = 0)
 		Aux.train_history_vis(history.history, path = self.input_path + self.output_path)
 	
 	def model_eval(self):
@@ -495,7 +503,7 @@ class Aux:
 		plt.ylabel('Loss')
 		plt.xlabel('Epoch')
 		plt.legend(['Train', 'Test'], loc = 'upper left')
-		plt.savefig(path + 'Loss_History.png', dpi = 300)
+		plt.savefig(path + 'Loss History.png', dpi = 300)
 		plt.close()
 
 	def actual_vs_prediction_vis(predictions, y_test, path):
@@ -507,7 +515,7 @@ class Aux:
 		plt.xlabel('Date')
 		plt.ylabel('GE Stock Price')
 		plt.legend(['Actuals', 'Predictions'], loc = 'upper left')
-		plt.savefig(path + 'Actuals_Predictions.png', dpi = 300)
+		plt.savefig(path + 'Actuals Predictions' + str(random.randint(1, 100)) + '.png', dpi = 300)
 		plt.close()
 ```
 
@@ -522,7 +530,6 @@ features = ['close']
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ### Three features scenario
 ```{python}
@@ -532,7 +539,6 @@ features = ['open', 'volume', 'close']
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ## Use RNN with one or any combinations of features to predict the closing value of one upcoming day. Did the performance increase after adding more features?
 The performance also improved after adding more features.
@@ -547,7 +553,6 @@ rnn_unit = True
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ### Three features with RNN scenario
 ```{python}
@@ -559,7 +564,6 @@ rnn_unit = True
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ## Perform hyperparameter tuning to improve the performance of your LSTM model
 I increased the number of timesteps (previous days) and added another LSTM layer with 16 units before the linear Dense layer in the end. The model performance increased as a result.
@@ -577,7 +581,6 @@ more_layer = True
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ### Three features with 10 timesteps scenario
 ```{python}
@@ -593,7 +596,6 @@ n_steps = 10
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ## Perform hyperparameter tuning to improve the performance of your RNN model
 
@@ -609,7 +611,6 @@ more_layer = False
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ### Three features with 10 timesteps scenario
 ```{python}
@@ -625,7 +626,6 @@ n_steps = 10
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ## Predict the closing values for 2 upcoming days using feature values from 8 previous days
 
@@ -644,7 +644,6 @@ n_steps_out = 2
 solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
 solver_object.exec()
 ```
-![Actual vs Prediction Graph](GE Stock Price with LSTM/output/Actuals_Predictions.png)
 
 ## Discuss in half A4 page the limitations of deep learning on predicting stock market
 Although neural network is powerful at approximating the statistical relationshiop between historical financial data and future financial data, usually future stock prices are correlated with non-financial factors that are not included in the dataset.

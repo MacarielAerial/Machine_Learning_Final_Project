@@ -1,3 +1,21 @@
+---
+title: "yifei_yu_am11_asmIV_GE"
+author: "Yifei Yu"
+date: "21/02/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(reticulate)
+knitr::opts_chunk$set(echo = TRUE)
+use_python('/Users/Chris/.pyenv/shims/python3')
+```
+
+# GE Stock Price Prediction Case
+
+## Import Libraries and Specify Global Parameters
+
+```{python}
 from __future__ import absolute_import, division, print_function
 
 # Import libraries
@@ -13,10 +31,12 @@ from tensorflow.keras.utils import plot_model
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
+import random
 import os
 
 # Configure the programme
 plt.style.use('seaborn-darkgrid')
+random.seed(11)
 
 # Specify global parameters
 input_path = 'GE Stock Price with LSTM/'
@@ -30,12 +50,16 @@ n_steps_out = 2
 batch_size = 10
 rnn_unit = False
 more_layer = True
+```
 
+## Load Data, Clean Data, Reshape Data, Define Model, Train Model and Evaluate Performance
+
+```{python}
 class Solver:
 	'''Executes sub-modules through this class object'''	
 	def __init__(self, input_path, input_file, output_path, output_file, features, time_col_name, n_steps, batch_size, rnn_unit, more_layer, train_test_split = 0.85, n_steps_out = 0):
 		'''Loads global variables into the object'''
-		Aux.directory_create(input_path + output_path[1:-1])
+		Aux.directory_create(input_path + output_path[1:-1]) # Create a directory if not already exist
 		self.input_path = input_path
 		self.input_file = input_file
 		self.output_path = output_path
@@ -44,10 +68,10 @@ class Solver:
 		self.time_col_name = time_col_name
 		self.n_steps = n_steps
 		self.batch_size = batch_size
-		self.rnn_unit = rnn_unit
-		self.more_layer = more_layer
+		self.rnn_unit = rnn_unit # Specify whether to enable RNN as a substitute for LSTM
+		self.more_layer = more_layer # Specify whether to add another layer for the model
 		self.train_test_split = train_test_split
-		self.n_steps_out = n_steps_out
+		self.n_steps_out = n_steps_out # Specify the number of timesteps for predictions
 		self.n_features = len(self.features)
 		self.df = Aux.data_import(self.input_path + self.input_file)
 		self.train = pd.DataFrame()
@@ -62,7 +86,7 @@ class Solver:
 		self.model1 = None
 		self.model2 = None
 		self.model3 = None
-		self.scaler_train = StandardScaler()
+		self.scaler_train = StandardScaler() # Intitiate a set of scalers
 		self.scaler_val = StandardScaler()
 		self.scaler_test = StandardScaler()
 		self.predictions = None
@@ -74,11 +98,11 @@ class Solver:
 
 	def data_clean(self):
 		'''Cleans the data'''
-		self.df = Aux.column_names_clean(self.df)
-		self.df[self.time_col_name] = pd.to_datetime(self.df[self.time_col_name])
+		self.df = Aux.column_names_clean(self.df) # Tidy up column names
+		self.df[self.time_col_name] = pd.to_datetime(self.df[self.time_col_name]) # Set datetime column
 		#self.df.set_index(time_col_name, inplace = True)
-		self.df['close'] = np.sqrt(self.df['close'])
-		self.df = Aux.column_reorder(self.df)
+		self.df['close'] = np.sqrt(self.df['close']) # Square root transform target feature column
+		self.df = Aux.column_reorder(self.df) # Reorder columns so target feature column is at the end
 		self.df = self.df[self.features]
 
 	def data_vis(self):
@@ -91,11 +115,11 @@ class Solver:
 	def data_split(self):
 		'''Splits data into train and test sets without shuffling'''
 		self.train, self.test = np.split(self.df, [int(self.train_test_split * len(self.df))])
-		self.train, self.val = np.split(self.train, [int(self.train_test_split * len(self.train))])
-		self.train, self.val, self.test = self.scaler_train.fit_transform(self.train), self.scaler_val.fit_transform(self.val), self.scaler_test.fit_transform(self.test)
+		self.train, self.val = np.split(self.train, [int(self.train_test_split * len(self.train))]) # Split data into three folds
+		self.train, self.val, self.test = self.scaler_train.fit_transform(self.train), self.scaler_val.fit_transform(self.val), self.scaler_test.fit_transform(self.test) # Scale three sets of data separately
 		self.X_train, self.y_train = Aux.data_reshape(self.train, self.n_steps, self.n_steps_out)
 		self.X_val, self.y_val = Aux.data_reshape(self.val, self.n_steps, self.n_steps_out)
-		self.X_test, self.y_test = Aux.data_reshape(self.test, self.n_steps, self.n_steps_out)
+		self.X_test, self.y_test = Aux.data_reshape(self.test, self.n_steps, self.n_steps_out) # Reshape data to the correct dimensionality for LSTM models
 
 	def model_define(self):
 		'''Defines the model architecture'''
@@ -119,11 +143,11 @@ class Solver:
 		if self.n_steps_out > 0:
 			self.model1.add(Dense(self.n_steps_out))
 		else:
-			self.model1.add(Dense(1))
-		self.model1.summary()
-		plot_model(self.model1, self.input_path + self.output_path + 'model.png', show_shapes = True)
-		self.model1.save(self.input_path + self.output_path + 'model')
-		self.model1.compile(loss = keras.losses.logcosh,
+			self.model1.add(Dense(1)) # Enables addition of layers and substitutes of computational units with a series of if statements
+		self.model1.summary() # Print out a model architecture summary
+		plot_model(self.model1, self.input_path + self.output_path + 'model.png', show_shapes = True) # Save a computational graph
+		self.model1.save(self.input_path + self.output_path + 'model') # Save the model for future usage
+		self.model1.compile(loss = keras.losses.logcosh, # Compile the model with set parameters
 				    optimizer = keras.optimizers.Adam(),
 				    metrics = ['mse'])
 
@@ -133,8 +157,9 @@ class Solver:
 					 batch_size = self.batch_size,
 					 epochs = 100,
 					 validation_data = (self.X_val, self.y_val),
-					 callbacks = Aux.earlystopping())
-		Aux.train_history_vis(history.history, path = self.input_path + self.output_path)
+					 callbacks = Aux.earlystopping(),
+					 verbose = 0)
+		Aux.train_history_vis(history.history, path = self.input_path + self.output_path) # Visualise training history
 	
 	def model_eval(self):
 		'''Evaluates model performance on test data'''
@@ -161,11 +186,11 @@ class Solver:
 		self.model_define()
 		self.model_train()
 		self.model_eval()
-		print('Training Data:')
-		print(self.scaler_train.inverse_transform(self.train))
-		print('Testing Data:')
-		print(self.scaler_test.inverse_transform(self.test))
+```
 
+## Convenience Functions
+
+```{python}
 class Aux:
 	'''Supports the main solver module'''
 	def data_import(path):
@@ -245,7 +270,7 @@ class Aux:
 		plt.ylabel('Loss')
 		plt.xlabel('Epoch')
 		plt.legend(['Train', 'Test'], loc = 'upper left')
-		plt.savefig(path + 'Loss_History.png', dpi = 300)
+		plt.savefig(path + 'Loss History.png', dpi = 300)
 		plt.close()
 
 	def actual_vs_prediction_vis(predictions, y_test, path):
@@ -257,14 +282,134 @@ class Aux:
 		plt.xlabel('Date')
 		plt.ylabel('GE Stock Price')
 		plt.legend(['Actuals', 'Predictions'], loc = 'upper left')
-		plt.savefig(path + 'Actuals_Predictions.png', dpi = 300)
+		plt.savefig(path + 'Actuals Predictions' + str(random.randint(1, 100)) + '.png', dpi = 300)
 		plt.close()
+```
 
-		
+## 8a
 
-def main():
-	solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
-	solver_object.exec()
+### One Feature Scenario
+```{python}
+# Specify one feature
+features = ['close']
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
 
-if __name__ == '__main__':
-	main()
+### Threee Features Scenario
+```{python}
+# Specify the combination of features
+features = ['open', 'volume', 'close']
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+
+## 8b
+
+### One Feature Scenario with RNN
+
+```{python}
+# Specify one feature
+features = ['close']
+# Specify RNN instead of LSTM as hidden layer computational unit
+rnn_unit = True
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+
+### Three Features Scenario with RNN
+
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify RNN instead of LSTM as hidden layer computational unit
+rnn_unit = True
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+
+## 8c
+
+### Three Features Scenario with One More LSTM Layer
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify LSTM instead of RNN as hidden layer computational unit
+rnn_unit = False
+# Add an additional layer of 16 LSTM unis to the model
+more_layer = True
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+
+### Three Features Scenario with 10 Timesteps Instead of 4
+
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify LSTM instead of RNN as hidden layer computational unit
+rnn_unit = False
+# Add no additional layer of 16 LSTM unis to the model
+more_layer = False
+# Stretch the input timestep window from the default to 10
+n_steps = 10
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+
+## 8d
+
+### Three Features Scenario with One More RNN Layer
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify RNN instead of LSTM as hidden layer computational unit
+rnn_unit = True
+# Add no additional layer of 16 LSTM unis to the model
+more_layer = False
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+
+### Three Features scenario with 10 Timesteps Instead of 4
+
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify RNN instead of LSTM as hidden layer computational unit
+rnn_unit = True
+# Add no additional layer of 16 LSTM unis to the model
+more_layer = False
+# Stretch the input timestep window from the default to 10
+n_steps = 10
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
+
+## 8e
+
+### Two Timesteps Predictions Instead of One
+
+```{python}
+# Specify three feature
+features = ['open', 'volume', 'close']
+# Specify LSTM instead of RNN as hidden layer computational unit
+rnn_unit = False
+# Add an additional layer of 16 LSTM unis to the model
+more_layer = True
+# Stretch the input timestep window from the default to 8
+n_steps = 8
+# Define the number of upcoming closing value prediction as 2
+n_steps_out = 2
+# Execute the algorithm
+solver_object = Solver(input_path = input_path, input_file = input_file, output_path = output_path, output_file = output_file, features = features, time_col_name = time_col_name, n_steps = n_steps, batch_size = batch_size, rnn_unit = rnn_unit, more_layer = more_layer, n_steps_out = n_steps_out)
+solver_object.exec()
+```
